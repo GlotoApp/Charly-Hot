@@ -535,13 +535,13 @@ function calcularRutaYCostos(destino) {
       let recargo = 0;
 
       // 1️⃣ Redondear al siguiente cien y mínimo 3000
-      costoBase = Math.max(redondearACien(costoBase), 3000);
+      costoBase = Math.max(redondearACien(costoBase), 4000);
 
       // 2️⃣ Aplicar recargo nocturno sobre el valor ya redondeado
-      if (hora >= 22 || hora < 6) {
-        recargo = costoBase * 0.2; // +20%
-        recargoTexto = " (+20%)";
-      }
+      //if (hora >= 22 || hora < 6) {
+        //recargo = costoBase * 0.2; // +20%
+        //recargoTexto = " (+20%)";
+      //}
 
       // 3️⃣ Sumar recargo y redondear de nuevo al siguiente cien
       costoDomicilio = redondearACien(costoBase + recargo);
@@ -578,7 +578,8 @@ function actualizarCostos(recargoTexto = "", hora = new Date().getHours()) {
     domicilioEl.textContent = `$${formatoPesos(costoDomicilio)}${recargoTexto}`;
   if (totalEl) totalEl.textContent = `$${formatoPesos(total)}`;
 
-  if (recargoEl) recargoEl.style.display = hora >= 22 || hora < 6 ? "block" : "none";
+  // RECARGO NOCTURNO DESACTIVADO - No mostrar el elemento
+  // if (recargoEl) recargoEl.style.display = hora >= 22 || hora < 6 ? "block" : "none";
 }
 
 // ================================
