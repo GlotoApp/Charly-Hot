@@ -1551,7 +1551,7 @@ input:checked+.slider:before {
 
 .pedido-id {
     color: #999;
-    font-size: 0.75rem;
+    font-size: 0.55rem;
     letter-spacing: 0.5px;
 }
 
@@ -1559,6 +1559,7 @@ input:checked+.slider:before {
 
 .pedido-nombre {
     color: #fff;
+    font-size: 0.70rem;
     text-transform: uppercase;
 }
 
@@ -1845,5 +1846,4 @@ input:checked+.slider:before {
 .direccion-texto strong {
     display: block;
 }
-
 
