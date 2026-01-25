@@ -2061,3 +2061,47 @@ function ejecutarImpresionSilenciosa(pedido) {
         }, 700); // Un poco más de tiempo para asegurar renderizado
     };
 }
+
+// --- FUNCIÓN PARA MANEJAR EL ESPACIO DE LA TAB-BAR EN MÓVIL ---
+function adjustTabBarSpacing() {
+    const orderPanel = document.getElementById('m-col-4');
+    const orderFooter = document.querySelector('.order-footer');
+    const tabBar = document.getElementById('bottom-tabs');
+    
+    if (!orderPanel || !tabBar || !orderFooter) return;
+
+    // Verificar si la tab-bar está visible (móvil)
+    const tabBarVisible = window.getComputedStyle(tabBar).display !== 'none';
+    
+    if (tabBarVisible) {
+        // Calcular altura de la tab-bar
+        const tabBarHeight = tabBar.offsetHeight;
+        const viewportHeight = window.innerHeight;
+        const footerRect = orderFooter.getBoundingClientRect();
+        
+        // Si el footer está siendo tapado por la tab-bar, agregar espaciador
+        if (footerRect.bottom > viewportHeight - 10) {
+            // Calcular cuánto espacio necesitamos
+            const gapNeeded = (footerRect.bottom + tabBarHeight) - viewportHeight;
+            
+            // Agregar scroll padding al order-content para que pueda scrollear
+            const orderContent = document.getElementById('cart-box')?.parentElement;
+            if (orderContent) {
+                orderContent.style.scrollPaddingBottom = (tabBarHeight + 20) + 'px';
+            }
+        }
+    }
+}
+
+// Ejecutar al iniciar, cuando cargue contenido y cuando cambie el tamaño
+window.addEventListener('load', () => setTimeout(adjustTabBarSpacing, 500));
+window.addEventListener('resize', adjustTabBarSpacing);
+document.addEventListener('DOMContentLoaded', adjustTabBarSpacing);
+
+// También ejecutar cuando se agreguen productos al carrito
+const observer = new MutationObserver(adjustTabBarSpacing);
+const cartBox = document.getElementById('cart-box');
+if (cartBox) {
+    observer.observe(cartBox, { childList: true, subtree: true });
+}
+
