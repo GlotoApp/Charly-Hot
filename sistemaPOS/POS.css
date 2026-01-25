@@ -1843,3 +1843,16 @@ input:checked+.slider:before {
 .direccion-texto strong {
     display: block;
 }
+
+/* --- ESPACIADOR PARA TAB-BAR EN MÓVIL --- */
+.tab-bar-spacer {
+    display: none;
+    width: 100%;
+    background: #f0f0f0;
+}
+
+@media (max-width: 1000px) {
+    .tab-bar-spacer {
+        display: block;
+    }
+}
