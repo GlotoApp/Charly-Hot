@@ -408,6 +408,7 @@ body {
     flex: 1;
     overflow-y: auto;
     padding: 8px 10px;
+    padding-bottom: 80px;
 }
 
 .item-row {
@@ -432,6 +433,8 @@ body {
     padding: 8px;
     background: #f0f0f0;
     border-top: 1px solid #ddd;
+    position: relative;
+    z-index: 2001;
 }
 
 .order-footer .order-method {
@@ -596,6 +599,10 @@ body {
 
     .input-mesa {
         font-size: 0.8rem;
+    }
+
+    .order-content {
+        padding-bottom: 20px;
     }
 
     /* En móvil, cuando mesas-expanded está activo, mostrar col 1 y col 2 juntas */
