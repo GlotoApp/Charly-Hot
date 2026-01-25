@@ -598,10 +598,6 @@ body {
         font-size: 0.8rem;
     }
 
-    #m-col-4 {
-        padding-bottom: calc(10px + max(env(safe-area-inset-bottom), 0px));
-    }
-
     /* En móvil, cuando mesas-expanded está activo, mostrar col 1 y col 2 juntas */
     .main-grid.mesas-expanded {
         grid-template-columns: 70px 1fr;
