@@ -207,7 +207,7 @@ body {
 
 #m-col-3 {
     overflow-y: auto;
-
+padding-bottom: 50px;
 }
 
 .btn-method {
@@ -430,7 +430,6 @@ body {
 
 .order-footer {
     padding: 8px;
-    background: #f0f0f0;
     border-top: 1px solid #ddd;
 }
 
@@ -543,6 +542,7 @@ body {
 
     .col.active-m {
         display: flex !important;
+        padding-bottom: 50px;
     }
 
     /* Mostrar siempre la sidebar (m-col-1) en móvil; el servicio (m-col-2)
@@ -622,7 +622,9 @@ body {
     }
 
 
-
+    .cat-list-vertical {
+        padding-bottom: 50px;
+    }
 
     .grid-items {
         gap: 3px;
@@ -1844,15 +1846,3 @@ input:checked+.slider:before {
     display: block;
 }
 
-/* --- ESPACIADOR PARA TAB-BAR EN MÓVIL --- */
-.tab-bar-spacer {
-    display: none;
-    width: 100%;
-    background: #f0f0f0;
-}
-
-@media (max-width: 1000px) {
-    .tab-bar-spacer {
-        display: block;
-    }
-}
