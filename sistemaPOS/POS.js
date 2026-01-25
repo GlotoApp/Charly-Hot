@@ -2065,43 +2065,42 @@ function ejecutarImpresionSilenciosa(pedido) {
 // --- FUNCIÓN PARA MANEJAR EL ESPACIO DE LA TAB-BAR EN MÓVIL ---
 function adjustTabBarSpacing() {
     const orderPanel = document.getElementById('m-col-4');
-    const orderFooter = document.querySelector('.order-footer');
     const tabBar = document.getElementById('bottom-tabs');
+    const cartBox = document.getElementById('cart-box');
     
-    if (!orderPanel || !tabBar || !orderFooter) return;
+    if (!orderPanel || !tabBar) return;
 
     // Verificar si la tab-bar está visible (móvil)
     const tabBarVisible = window.getComputedStyle(tabBar).display !== 'none';
     
-    if (tabBarVisible) {
-        // Calcular altura de la tab-bar
+    if (tabBarVisible && cartBox) {
+        // Calcular altura de la tab-bar + safe-area-inset
         const tabBarHeight = tabBar.offsetHeight;
-        const viewportHeight = window.innerHeight;
-        const footerRect = orderFooter.getBoundingClientRect();
+        const safeAreaBottom = parseInt(
+            getComputedStyle(document.documentElement).getPropertyValue('--safe-area-bottom') || 
+            window.getComputedStyle(document.body).paddingBottom || 0
+        );
         
-        // Si el footer está siendo tapado por la tab-bar, agregar espaciador
-        if (footerRect.bottom > viewportHeight - 10) {
-            // Calcular cuánto espacio necesitamos
-            const gapNeeded = (footerRect.bottom + tabBarHeight) - viewportHeight;
-            
-            // Agregar scroll padding al order-content para que pueda scrollear
-            const orderContent = document.getElementById('cart-box')?.parentElement;
-            if (orderContent) {
-                orderContent.style.scrollPaddingBottom = (tabBarHeight + 20) + 'px';
-            }
+        const totalSpacing = tabBarHeight + safeAreaBottom;
+        
+        // Agregar o actualizar el espaciador
+        let spacer = cartBox.parentElement.querySelector('.tab-bar-spacer');
+        if (!spacer) {
+            spacer = document.createElement('div');
+            spacer.className = 'tab-bar-spacer';
+            cartBox.parentElement.appendChild(spacer);
         }
+        
+        spacer.style.height = totalSpacing + 'px';
+        spacer.style.minHeight = totalSpacing + 'px';
+    } else {
+        // Remover el espaciador si la tab-bar no está visible
+        const spacer = cartBox?.parentElement?.querySelector('.tab-bar-spacer');
+        if (spacer) spacer.remove();
     }
 }
 
-// Ejecutar al iniciar, cuando cargue contenido y cuando cambie el tamaño
-window.addEventListener('load', () => setTimeout(adjustTabBarSpacing, 500));
+// Ejecutar al iniciar y cuando cambie el tamaño de la ventana
+window.addEventListener('load', adjustTabBarSpacing);
 window.addEventListener('resize', adjustTabBarSpacing);
-document.addEventListener('DOMContentLoaded', adjustTabBarSpacing);
-
-// También ejecutar cuando se agreguen productos al carrito
-const observer = new MutationObserver(adjustTabBarSpacing);
-const cartBox = document.getElementById('cart-box');
-if (cartBox) {
-    observer.observe(cartBox, { childList: true, subtree: true });
-}
 
