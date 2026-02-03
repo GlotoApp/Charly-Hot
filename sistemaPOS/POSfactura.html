@@ -474,7 +474,7 @@
                 <div id="total-sin-propina"><strong>$0</strong></div>
             </div>
             <div class="row">
-                <div>Propina 10% (opcional)</div>
+                <div>Propina 10% (Opcional)</div>
                 <div id="propina">$0</div>
             </div>
             <div class="row total" id="total-final-row">
@@ -508,6 +508,7 @@
         <div class="print-actions">
             <button id="btn-print">🖨️ Imprimir</button>
             <button id="btn-savepdf">💾 Guardar PDF</button>
+            <button id="btn-share">🔗 Compartir</button>
             <button id="btn-close">✖ Cerrar</button>
         </div>
     </div>
@@ -579,12 +580,32 @@
             document.getElementById('btn-print').addEventListener('click', () => window.print());
             document.getElementById('btn-close').addEventListener('click', () => {
                 localStorage.removeItem('lastPedido');
-                window.location.href = 'POS.html';
+                // Intenta cerrar la pestaña actual
+                window.close();
+                // Si no se puede cerrar (por restricciones del navegador), redirige a POS.html en la misma pestaña
+                setTimeout(() => {
+                    window.location.replace('POS.html');
+                }, 200);
             });
 
             // Guardar PDF: captura el elemento #page y genera un PDF sin los botones
             document.getElementById('btn-savepdf').addEventListener('click', async () => {
-                await saveInvoicePdf();
+                const res = await generateInvoicePdfBlob();
+                if (res && res.blob && res.filename) {
+                    const url = URL.createObjectURL(res.blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = res.filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 60000);
+                }
+            });
+
+            // Compartir PDF: intentamos Web Share API con archivos y fallback
+            document.getElementById('btn-share').addEventListener('click', async () => {
+                await shareInvoicePdf();
             });
 
             // 4. EL MOTOR DE LA TABLA: Insertar los productos
@@ -675,8 +696,8 @@
 
 
         })();
-        // Función para generar PDF sin mostrar los botones
-        async function saveInvoicePdf() {
+        // Generar PDF y devolver { blob, filename }
+        async function generateInvoicePdfBlob() {
             const pageEl = document.getElementById('page');
             const actions = document.querySelector('.print-actions');
 
@@ -720,7 +741,58 @@
             const fecha = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
             const filename = `${factura}_${fecha}.pdf`;
 
-            pdf.save(filename);
+            // Generar blob
+            const blob = pdf.output('blob');
+            return { blob, filename };
+        }
+
+        // Compartir factura: intenta Web Share API con archivos. Fallback a descarga + WhatsApp web.
+        async function shareInvoicePdf() {
+            try {
+                const res = await generateInvoicePdfBlob();
+                if (!res || !res.blob) return;
+
+                const factura = document.getElementById('factura-num').textContent || '';
+                const file = new File([res.blob], res.filename, { type: 'application/pdf' });
+
+                // Web Share API con archivos (móviles modernos)
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    try {
+                        await navigator.share({ files: [file], title: `Factura ${factura}`, text: `Factura Nº ${factura}` });
+                        return;
+                    } catch (err) {
+                        console.warn('Error en navigator.share:', err);
+                        // continuar al fallback
+                    }
+                }
+
+                // Fallback: descargar el PDF automáticamente
+                const url = URL.createObjectURL(res.blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = res.filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+                // Intentar abrir WhatsApp Web con mensaje prellenado al número del cliente (si existe)
+                let datos = {};
+                try { datos = JSON.parse(localStorage.getItem('datosFacturaPOS') || '{}'); } catch (e) { datos = {}; }
+                const telefono = (datos.cliente && datos.cliente.telefono) ? String(datos.cliente.telefono).replace(/\D/g, '') : '';
+                const msg = `Factura Nº ${factura} - Te envío el PDF de tu compra.`;
+
+                if (telefono) {
+                    const waUrl = `https://wa.me/${telefono}?text=${encodeURIComponent(msg)}`;
+                    window.open(waUrl, '_blank');
+                } else {
+                    alert('PDF descargado. Ahora puedes compartirlo con el cliente (no se encontró número de teléfono).');
+                }
+
+            } catch (e) {
+                console.error('Error al generar/compartir PDF:', e);
+                alert('Ocurrió un error al generar o compartir el PDF.');
+            }
         }
     </script>
     <script src="../config-loader.js"></script>

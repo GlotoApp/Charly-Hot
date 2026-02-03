@@ -73,6 +73,12 @@
             <div id="view-mesas" class="view-overlay">
                 <span class="close-view" onclick="closeLists()">×</span>
                 <h3>Mesas Activas</h3>
+
+                <div style="padding: 10px; text-align: center; position: relative;">
+                    <input type="text" id="search-mesas" placeholder="Buscar por nombre o mesa..." oninput="onSearchMesasInput()" style="width: 100%; padding: 8px 30px 8px 10px ; border-radius: 25px; border: 1px solid var(--border); background: #111; color: #fff; outline: none;">
+                    <span id="clear-search-mesas" onclick="clearSearchMesas()" style="position: absolute; right: 20px; top: 50%; transform: translateY(-50%); cursor: pointer; font-size: 1.2rem; color: #999; font-weight: bold; display: none;">&times;</span>
+                </div>
+
                 <div id="mesas-list"></div>
             </div>
 
@@ -80,9 +86,14 @@
                 <span class="close-view" onclick="closeLists()">×</span>
                 <h3>Historial de Pedidos</h3>
 
-<div style="text-align: center; padding: 10px; color: var(--accent); font-weight: bold;">
-    HOY Y AYER
-</div>
+                <div style="padding: 10px; text-align: center; position: relative;">
+                    <input type="text" id="search-pedidos" placeholder="Buscar por nombre o factura..." oninput="onSearchPedidosInput()" style="width: 100%; padding: 8px 30px 8px 10px; border-radius: 25px; border: 1px solid var(--border); background: #111; color: #fff; outline: none;">
+                    <span id="clear-search-pedidos" onclick="clearSearchPedidos()" style="position: absolute; right: 20px; top: 50%; transform: translateY(-50%); cursor: pointer; font-size: 1.2rem; color: #999; font-weight: bold; display: none;">&times;</span>
+                </div>
+
+                <div style="text-align: center; padding: 10px; color: var(--accent); font-weight: bold;">
+                    HOY Y AYER
+                </div>
                 <div id="pedidos-list"></div>
             </div>
         </div>
@@ -105,7 +116,7 @@
                     <label
                         style="font-size: 0.62rem; color: #666; display: block; margin-bottom: 4px; font-weight: bold; text-transform: uppercase;">Método
                         de Pago</label>
-                    <select id="val-metodo-pago" class="input-pro" onchange="updateButtonState()"
+                    <select id="val-metodo-pago" class="input-pro" onchange="updateButtonState(); mostrarCampoMonto()"
                         style="background: #fff; color: #000; border: 1px solid #ddd; padding: 8px; height: 40px; font-weight: bold;">
                         <option value="" selected disabled>Seleccionar método de pago</option>
                         <option value="Efectivo">💵 Efectivo</option>
@@ -113,10 +124,15 @@
                         <option value="Efectivo/Transferencia">💰 Efectivo / Transferencia</option>
                     </select>
                 </div>
+                <div id="container-monto-efectivo" style="display: none; margin-top: 10px;">
+                    <label style="font-size: 0.62rem; color: #666; display: block; margin-bottom: 4px; font-weight: bold; text-transform: uppercase;">Monto recibido (opcional) </label>
+                    <input type="text" id="val-monto-efectivo" class="input-pro" placeholder="00.000" oninput="formatearMontoColombiano(this)" style="background: #fff; color: #000; border: 1px solid #ddd; padding: 8px; height: 40px;">
+                </div>
 
                 <div class="order-total-row">
                     <span>TOTAL</span><span id="order-total">$ 0</span>
                 </div>
+                <div id="cambio-info" style="margin-top: 8px; margin-bottom: 8px; background: none; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; color: #333; display: none;"></div>
                 <div style="display: flex; gap: 8px;">
                     <button class="btn-action" onclick="finish()" style="flex:1">ENVIAR PEDIDO</button>
                     <button id="btn-cancel-edit" class="btn-action" onclick="cancelEdit()"
@@ -156,6 +172,13 @@
             <div class="step-text" id="step-text"></div>
         </div>
     </div>
+
+    <div id="overlay-suspension" onclick="location.reload()">
+    <div class="suspension-content">
+        <h2 class="pulse-text">🌙 Sistema en reposo</h2>
+        <p>Haz clic o toca cualquier parte para continuar</p>
+    </div>
+</div>
 
     <script src="POS.js"></script>
 </body>

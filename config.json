@@ -28,6 +28,10 @@
         -75.473260
     ],
     "footerLogo": "img/logo.png",
+        "domicilio": {
+        "tarifaMinima": 4000,
+        "recargoNocturnoActivo": false
+    },
     "crearTienda": "https://wa.me/573022666530?text=Quiero%20crear%20mi%20tienda",
     "apiUrls": {
         "productos": "https://script.google.com/macros/s/AKfycbyuAC8_S8DIuuS0vYyV19R5VlaLKSFyCjsEwn9U_8uixBG19WLkr7rxffkRh75xvK61Lg/exec",
@@ -36,5 +40,4 @@
         "reciboBaseDatos": "https://script.google.com/macros/s/AKfycbygU-qL9ftI2hJlgNp6t5t2wlvPx9nANJm8YgPex-Mb20O714M5fH4GydjtyfcRJRn14A/exec",
         "CajaDatos": "https://script.google.com/macros/s/AKfycby4TP4zSuZoB70zR3eoe21luOuJjC4J767Qr_zkB3pIdkNK1ocnmRsSxTKRnXZhUpM2Kg/exec"   
     }
-
 }

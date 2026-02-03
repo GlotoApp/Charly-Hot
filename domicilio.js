@@ -6,6 +6,7 @@ let tiendaCoords = [10.393386, -75.482885]; // valor por defecto cenro de cartag
 let nombreTienda = "Mi Restaurante";
 
 // 🧩 Cargar configuración desde config.json
+let config = null;
 async function cargarConfig() {
   try {
     const res = await fetch("config.json");
@@ -16,6 +17,9 @@ async function cargarConfig() {
     if (data?.coordenadasSede) tiendaCoords = data.coordenadasSede;
     if (data?.logo) logoTienda = data.logo;
     if (data?.sede?.nombre) nombreTienda = data.sede.nombre;
+    
+    // ✅ Guardar configuración global para usarla después
+    config = data;
 
     return data; // devolvemos la configuración cargada
   } catch (error) {
@@ -533,16 +537,18 @@ function calcularRutaYCostos(destino) {
       const hora = new Date().getHours();
       let recargoTexto = "";
       let recargo = 0;
+      
+      // Obtener configuración desde config.json
+      const tarifaMinima = config?.domicilio?.tarifaMinima || 3000;
+      const recargoNocturnoActivo = config?.domicilio?.recargoNocturnoActivo !== false; // true por defecto
 
-      // 1️⃣ Redondear al siguiente cien y mínimo 3000
-      costoBase = Math.max(redondearACien(costoBase), 4000);
+      // 1️⃣ Redondear al siguiente cien y aplicar tarifa mínima desde config
+      costoBase = Math.max(redondearACien(costoBase), tarifaMinima);
 
-      // 2️⃣ Aplicar recargo nocturno sobre el valor ya redondeado
-      //if (hora >= 22 || hora < 6) {
-        //recargo = costoBase * 0.2; // +20%
-        //recargoTexto = " (+20%)";
-      //}
-
+      // 2️⃣ Aplicar recargo nocturno sobre el valor ya redondeado (solo si está activo)
+      if (recargoNocturnoActivo && (hora >= 22 || hora < 6)) {        recargo = costoBase * 0.2; // +20%
+        recargoTexto = " (+20%)";
+      }
       // 3️⃣ Sumar recargo y redondear de nuevo al siguiente cien
       costoDomicilio = redondearACien(costoBase + recargo);
 
@@ -578,8 +584,9 @@ function actualizarCostos(recargoTexto = "", hora = new Date().getHours()) {
     domicilioEl.textContent = `$${formatoPesos(costoDomicilio)}${recargoTexto}`;
   if (totalEl) totalEl.textContent = `$${formatoPesos(total)}`;
 
-  // RECARGO NOCTURNO DESACTIVADO - No mostrar el elemento
-  // if (recargoEl) recargoEl.style.display = hora >= 22 || hora < 6 ? "block" : "none";
+  // Mostrar mensaje de recargo solo si está activo en config Y es hora nocturna
+  const recargoNocturnoActivo = config?.domicilio?.recargoNocturnoActivo !== false;
+  if (recargoEl) recargoEl.style.display = (recargoNocturnoActivo && (hora >= 22 || hora < 6)) ? "block" : "none";
 }
 
 // ================================
@@ -822,4 +829,16 @@ if (panel && btnLocate) {
 
   // También al redimensionar la ventana
   window.addEventListener("resize", posicionarBoton);
+}
+
+// Función global para que POS.js pueda calcular el costo igual que la web
+function obtenerCostoEnvioEstandar(distanciaKm) {
+    const valorKM = config?.costoPorKilometro || 1000;
+    const baseEnvio = config?.costoEnvioBase || 2000;
+    const TARIFA_MINIMA = 3000; // <--- Cambia aquí y se cambia en todo el sistema
+
+    let costoCalculado = Math.round(distanciaKm * valorKM) + baseEnvio;
+
+    // Retornamos el valor, pero aseguramos que nunca sea menor a la mínima
+    return Math.max(TARIFA_MINIMA, costoCalculado);
 }

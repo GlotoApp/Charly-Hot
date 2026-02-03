@@ -7,7 +7,12 @@ let editingOrderId = null; // Almacena el ID del pedido que se está editando
 let originalOrderSnapshot = null; // Almacenará el estado inicial del pedido para comparar
 let isLoadingDomicilio = false; // Bandera para detectar si estamos cargando un domicilio inicial
 let costoDomicilioOriginal = 0; // Guardar el costo original del domicilio para respetarlo
+let pedidosCargados = []; // Almacenar todos los pedidos para filtrado
+let mesasCargadas = []; // Almacenar todas las mesas para filtrado
 
+
+let timeoutInactividad = null;
+let sistemaSuspendido = false;
 
 
 
@@ -38,6 +43,99 @@ async function cargarConfiguracion() {
 
 // // Llamar a la función al iniciar
 cargarConfiguracion();
+
+// --- FUNCIONES DE VALIDACIÓN DE INPUTS ---
+function validarSoloLetras(input) {
+    // Permite letras, espacios y acentos
+    const valorLimpio = input.value.replace(/[^a-záéíóúñA-ZÁÉÍÓÚÑ\s]/g, '');
+    input.value = valorLimpio;
+}
+
+function validarTelefono(input) {
+    // Permite solo números y el signo +
+    const valorLimpio = input.value.replace(/[^0-9+]/g, '');
+    input.value = valorLimpio;
+}
+
+function validarSoloNumeros(input) {
+    // Permite solo números
+    const valorLimpio = input.value.replace(/[^0-9]/g, '');
+    input.value = valorLimpio;
+}
+
+function setMesaNumber(numero) {
+    const inputMesa = document.getElementById("val-mesa");
+    if (inputMesa) {
+        inputMesa.value = numero;
+        checkInputStatus("val-mesa");
+        updateTitle();
+        updateButtonState();
+        updateStepIndicator();
+    }
+}
+
+function mostrarCampoMonto() {
+    const metodoPago = document.getElementById("val-metodo-pago").value;
+    const containerMonto = document.getElementById("container-monto-efectivo");
+    const cambioInfo = document.getElementById("cambio-info");
+    const inputMonto = document.getElementById("val-monto-efectivo");
+    
+    if (metodoPago === "Efectivo" || metodoPago === "Efectivo/Transferencia") {
+        containerMonto.style.display = "block";
+    } else {
+        containerMonto.style.display = "none";
+        inputMonto.value = "";
+        cambioInfo.style.display = "none";
+    }
+}
+
+function calcularCambio() {
+    const inputMonto = document.getElementById("val-monto-efectivo");
+    const cambioInfo = document.getElementById("cambio-info");
+    const monto = parseFloat((inputMonto.value || "0").replace(/\./g, '')) || 0;
+    
+    // Obtener el total mostrado en pantalla (ya incluye domicilio si aplica)
+    const totalText = document.getElementById("order-total").textContent;
+    const total = parseFloat(totalText.replace(/[^0-9]/g, '')) || 0;
+    
+    if (monto > 0) {
+        const cambio = monto - total;
+        
+        if (cambio >= 0) {
+            cambioInfo.innerHTML = `<span>Cambio:</span><span style="color: #2ecc71;">$ ${cambio.toLocaleString('es-CO')}</span>`;
+            cambioInfo.style.display = "flex";
+        } else {
+            cambioInfo.innerHTML = `<span>Falta:</span><span style="color: #e74c3c;">-$ ${Math.abs(cambio).toLocaleString('es-CO')}</span>`;
+            cambioInfo.style.display = "flex";
+        }
+    } else {
+        cambioInfo.style.display = "none";
+    }
+}
+
+/**
+ * Formatea el valor del input a moneda COP (puntos de miles) mientras se escribe.
+ * @param {HTMLInputElement} input 
+ */
+function formatearMontoColombiano(input) {
+    // 1. Obtener solo los números del valor actual
+    let valor = input.value.replace(/\D/g, '');
+    
+    // 2. Formatear con puntos cada 3 dígitos (COP)
+    if (valor) {
+        valor = new Number(valor).toLocaleString('es-CO').replace(/,/g, '.');
+    }
+    
+    // 3. Asignar el valor formateado de vuelta al input
+    input.value = valor;
+
+    // 4. Actualizar cálculos inmediatamente
+    if (input.id === "val-costo-domicilio") {
+        actualizarTotalesConDomicilio();
+    } else if (input.id === "val-monto-efectivo") {
+        calcularCambio();
+    }
+}
 
 
 
@@ -176,7 +274,7 @@ async function init() {
 
     renderCats();
     renderItems(db);
-    
+    resetInactivityTimer();
     hideSpinner();
   } catch (err) {
     hideSpinner();
@@ -189,6 +287,13 @@ async function init() {
 async function showMesas() {
   goStep(2);
   const list = document.getElementById("mesas-list");
+  const searchInput = document.getElementById("search-mesas");
+  if (searchInput) {
+    searchInput.value = ""; // Limpiar búsqueda
+    const clearBtn = document.getElementById("clear-search-mesas");
+    if (clearBtn) clearBtn.style.display = 'none';
+  }
+
   document.getElementById("service-content").style.display = "none";
   document.getElementById("view-pedidos").classList.remove("active");
   document.getElementById("view-mesas").classList.add("active");
@@ -202,67 +307,275 @@ async function showMesas() {
     .sort((a, b) => Number(a.mesa || 0) - Number(b.mesa || 0));
 
   hideSpinner();
-list.innerHTML = activas.length
-    ? activas.map(m => {
-        // En esta lista siempre son mesas
-        const badge = `<span class="badge-metodo badge-mesa">Mesa ${m.mesa}</span>`;
+
+  // Almacenar todas las mesas para el filtrado
+  mesasCargadas = activas;
+  
+  // Renderizar las mesas
+  renderizarMesas(activas);
+}
+
+function filtrarMesas() {
+    const searchInput = document.getElementById("search-mesas");
+    const query = (searchInput.value || "").toLowerCase().trim();
+    
+    if (!query) {
+        // Si no hay búsqueda, mostrar todas
+        renderizarMesas(mesasCargadas);
+        return;
+    }
+    
+    // Filtrar por nombre o número de mesa
+    const filtrados = mesasCargadas.filter(m => 
+        (m.nombre || "").toLowerCase().includes(query) || 
+        (m.mesa || "").toString().includes(query)
+    );
+    
+    renderizarMesas(filtrados);
+}
+
+function renderizarMesas(mesasAMostrar) {
+    const list = document.getElementById("mesas-list");
+    
+    list.innerHTML = mesasAMostrar.length
+        ? mesasAMostrar.map(m => {
+            // En esta lista siempre son mesas
+            const badge = `<span class="badge-metodo badge-mesa">Mesa ${m.mesa}</span>`;
+            
+            // Convertimos el objeto a String para el botón de editar
+            const mString = JSON.stringify(m).replace(/"/g, "&quot;");
+
+            return `
+            <div class="pedido-card">
+                <div class="pedido-header" onclick="this.parentElement.classList.toggle('abierto')">
+                    <div class="header-info">
+                        ${badge}
+                        <div class="header-top">
+                            <span class="pedido-id">${m.numeroFactura}</span>
+                        </div>
+                        <strong class="pedido-nombre">${m.nombre || 'Sin nombre'}</strong>
+                    </div>
+                    <div class="header-precio">
+                        <div class="pedido-hora">${m.hora || ''} <i class="fas fa-chevron-down arrow-icon"></i></div>
+                        <span class="pedido-total">$${Number(m.totalPagar).toLocaleString('es-CO')}</span>
+                    </div>
+                </div>
+                
+                <div class="pedido-detalle">
+                    <div class="detalle-container">
+                        
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">Cel:</span>
+                                <strong><i class="fas fa-phone"></i> ${m.telefono || '0'}</strong>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Pago:</span>
+                                <strong><i class="fas fa-wallet"></i> ${m.metodoPago || 'Pendiente'}</strong>
+                            </div>
+                        </div>
+
+                        <div class="info-productos">
+                            <strong class="productos-title">Producto(s) de la Mesa</strong>
+                            <pre class="productos-lista">${m.productos}</pre>
+                        </div>
+
+                        ${m.observaciones ? `
+                        <div class="info-notas">
+                            <strong>Notas:</strong> ${m.observaciones}
+                        </div>` : ''}
+
+                        <button class="btn-edit" onclick="editExistingOrder(${mString})">
+                            <i class="fas fa-external-link-alt"></i> EDITAR MESA ${m.mesa}
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+        }).join("")
+        : "<p style='text-align:center; padding:20px; color:#666;'>No hay mesas activas.</p>";
+}
+
+function filtrarPedidos() {
+    const searchInput = document.getElementById("search-pedidos");
+    const query = (searchInput.value || "").toLowerCase().trim();
+    const list = document.getElementById("pedidos-list");
+    
+    if (!query) {
+        // Si no hay búsqueda, mostrar todos
+        renderizarPedidos(pedidosCargados);
+        return;
+    }
+    
+    // Filtrar por nombre o número de factura
+    const filtrados = pedidosCargados.filter(p => 
+        p.nombre.toLowerCase().includes(query) || 
+        p.numeroFactura.toLowerCase().includes(query)
+    );
+    
+    renderizarPedidos(filtrados);
+}
+
+  function onSearchPedidosInput() {
+    const input = document.getElementById("search-pedidos");
+    const clearBtn = document.getElementById("clear-search-pedidos");
+    if (clearBtn) clearBtn.style.display = (input && input.value && input.value.length) ? 'block' : 'none';
+    filtrarPedidos();
+  }
+
+  function clearSearchPedidos() {
+    const input = document.getElementById("search-pedidos");
+    if (input) input.value = '';
+    filtrarPedidos();
+    const clearBtn = document.getElementById("clear-search-pedidos");
+    if (clearBtn) clearBtn.style.display = 'none';
+    if (input) input.focus();
+  }
+
+  function onSearchMesasInput() {
+    const input = document.getElementById("search-mesas");
+    const clearBtn = document.getElementById("clear-search-mesas");
+    if (clearBtn) clearBtn.style.display = (input && input.value && input.value.length) ? 'block' : 'none';
+    filtrarMesas();
+  }
+
+  function clearSearchMesas() {
+    const input = document.getElementById("search-mesas");
+    if (input) input.value = '';
+    filtrarMesas();
+    const clearBtn = document.getElementById("clear-search-mesas");
+    if (clearBtn) clearBtn.style.display = 'none';
+    if (input) input.focus();
+  }
+
+function renderizarPedidos(pedidosAMostrar) {
+    const list = document.getElementById("pedidos-list");
+    
+    // Obtener fechas de hoy y ayer
+    const hoyDate = new Date();
+    const d0 = String(hoyDate.getDate()).padStart(2, '0');
+    const m0 = String(hoyDate.getMonth() + 1).padStart(2, '0');
+    const y0 = hoyDate.getFullYear();
+    const fechaHoy = `${d0}/${m0}/${y0}`;
+
+    const ayerDate = new Date();
+    ayerDate.setDate(ayerDate.getDate() - 1);
+    const d1 = String(ayerDate.getDate()).padStart(2, '0');
+    const m1 = String(ayerDate.getMonth() + 1).padStart(2, '0');
+    const y1 = ayerDate.getFullYear();
+    const fechaAyer = `${d1}/${m1}/${y1}`;
+    
+    // Función para crear tarjeta HTML
+    const crearTarjetaHTML = (p) => {
+        let badge = `<span class="badge-metodo badge-recoger">Recoger</span>`;
+        if (p.direccion) badge = `<span class="badge-metodo badge-domicilio">Domicilio</span>`;
+        else if (p.mesa !== "" && p.mesa !== undefined) badge = `<span class="badge-metodo badge-mesa">Mesa ${p.mesa}</span>`;
+
+        const pString = JSON.stringify(p).replace(/"/g, "&quot;");
         
-        // Convertimos el objeto a String para el botón de editar
-        const mString = JSON.stringify(m).replace(/"/g, "&quot;");
+        const lateralDerecho = `
+            <div class="direccion-lateral">
+                ${Number(p.costoDomicilio) > 0 ? `
+                    <div class="info-domicilio-valor">
+                        <span class="info-label">Envío:</span>
+                        <strong><i class="fas fa-motorcycle"></i> $${Number(p.costoDomicilio).toLocaleString()}</strong>
+                    </div>
+                ` : ''}
+                ${p.ubicacionGoogleMaps ? `
+                    <a href="${p.ubicacionGoogleMaps}" target="_blank" class="link-mapa">
+                        <i class="fas fa-map-marker-alt"></i>Ver Mapa</a>
+                ` : ''}
+            </div>
+        `;
 
         return `
-        <div class="pedido-card">
-            <div class="pedido-header" onclick="this.parentElement.classList.toggle('abierto')">
-                <div class="header-info">
-                    ${badge}
-                    <div class="header-top">
-                        <span class="pedido-id">${m.numeroFactura}</span>
-                    </div>
-                    <strong class="pedido-nombre">${m.nombre || 'Sin nombre'}</strong>
-                </div>
-                <div class="header-precio">
-                    <div class="pedido-hora">${m.hora || ''} <i class="fas fa-chevron-down arrow-icon"></i></div>
-                    <span class="pedido-total">$${Number(m.totalPagar).toLocaleString('es-CO')}</span>
-                </div>
-            </div>
-            
-            <div class="pedido-detalle">
-                <div class="detalle-container">
-                    
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <span class="info-label">Cel:</span>
-                            <strong><i class="fas fa-phone"></i> ${m.telefono || '0'}</strong>
+            <div class="pedido-card">
+                <div class="pedido-header" onclick="this.parentElement.classList.toggle('abierto')">
+                    <div class="header-info">
+                        ${badge}
+                        <div class="header-top">
+                            <span class="pedido-id">${p.numeroFactura}</span>
                         </div>
-                        <div class="info-item">
-                            <span class="info-label">Pago:</span>
-                            <strong><i class="fas fa-wallet"></i> ${m.metodoPago || 'Pendiente'}</strong>
+                        <strong class="pedido-nombre">${p.nombre}</strong>
+                    </div>
+                    <div class="header-precio">
+                        <div class="pedido-hora">${p.hora} <i class="fas fa-chevron-down arrow-icon"></i></div>
+                        <span class="pedido-total">$${Number(p.totalPagar).toLocaleString()}</span>
+                    </div>
+                </div>
+                <div class="pedido-detalle">
+                    <div class="detalle-container">
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">Cel:</span>
+                                <strong><i class="fas fa-phone"></i> ${p.telefono || '0'}</strong>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Pago:</span>
+                                <strong><i class="fas fa-wallet"></i> ${p.metodoPago || 'No definido'}</strong>
+                            </div>
+                        </div>
+                        ${p.direccion ? `
+                        <div class="info-direccion">
+                            <div class="direccion-header">
+                                <div class="direccion-texto">
+                                    <span class="info-label">Dirección de entrega:</span>
+                                    <strong>${p.direccion}</strong>
+                                    ${p.puntoReferencia ? `<small>REFERENCIA: ${p.puntoReferencia}</small>` : ''}
+                                </div>
+                                ${lateralDerecho}
+                            </div>
+                        </div>` : ''}
+                        <div class="info-productos">
+                            <strong class="productos-title">Productos</strong>
+                            <pre class="productos-lista">${p.productos}</pre>
+                        </div>
+                        <div class="acciones-footer">
+                            <button class="btn-edit" onclick="editExistingOrder(${pString})">
+                                <i class="fas fa-edit"></i> EDITAR
+                            </button>
+                            <button class="btn-print" onclick='imprimirFacturaPOS(${pString})'>
+                                <i class="fas fa-print"></i> VER FACTURA
+                            </button>
                         </div>
                     </div>
-
-                    <div class="info-productos">
-                        <strong class="productos-title">Producto(s) de la Mesa</strong>
-                        <pre class="productos-lista">${m.productos}</pre>
-                    </div>
-
-                    ${m.observaciones ? `
-                    <div class="info-notas">
-                        <strong>Notas:</strong> ${m.observaciones}
-                    </div>` : ''}
-
-                    <button class="btn-edit" onclick="editExistingOrder(${mString})">
-                        <i class="fas fa-external-link-alt"></i> EDITAR MESA ${m.mesa}
-                    </button>
                 </div>
-            </div>
-        </div>`;
-    }).join("")
-    : "<p style='text-align:center; padding:20px; color:#666;'>No hay mesas activas.</p>";
+            </div>`;
+    };
+    
+    if (pedidosAMostrar.length === 0) {
+        list.innerHTML = `<p style="text-align:center; padding:30px; color:#555;">No hay resultados.</p>`;
+        return;
+    }
+    
+    // Separar por fecha
+    const pedidosHoy = pedidosAMostrar.filter(p => p.fecha === fechaHoy).reverse();
+    const pedidosAyer = pedidosAMostrar.filter(p => p.fecha === fechaAyer).reverse();
+    
+    let htmlAcumulado = "";
+    
+    if (pedidosHoy.length > 0) {
+        htmlAcumulado += `<div class="divisor-fecha">HOY (${fechaHoy})</div>`;
+        htmlAcumulado += pedidosHoy.map(p => crearTarjetaHTML(p)).join("");
+    }
+    
+    if (pedidosAyer.length > 0) {
+        htmlAcumulado += `<div class="divisor-fecha">AYER (${fechaAyer})</div>`;
+        htmlAcumulado += pedidosAyer.map(p => crearTarjetaHTML(p)).join("");
+    }
+    
+    list.innerHTML = htmlAcumulado;
 }
 
 async function showPedidos() {
     goStep(2);
     const list = document.getElementById("pedidos-list");
+    const searchInput = document.getElementById("search-pedidos");
+    if (searchInput) {
+      searchInput.value = ""; // Limpiar búsqueda
+      const clearBtn = document.getElementById("clear-search-pedidos");
+      if (clearBtn) clearBtn.style.display = 'none';
+    }
+
 
 
     document.getElementById("service-content").style.display = "none";
@@ -302,102 +615,12 @@ if (pedidosHoy.length === 0 && pedidosAyer.length === 0) {
             list.innerHTML = `<p style="text-align:center; padding:30px; color:#555;">No hay pedidos de hoy ni de ayer.</p>`;
             return;
         }
-// // Función interna para generar el HTML de la tarjeta (sin eliminar nada de tu diseño original)
-        const crearTarjetaHTML = (p) => {
-            let badge = `<span class="badge-metodo badge-recoger">Recoger</span>`;
-            if (p.direccion) badge = `<span class="badge-metodo badge-domicilio">Domicilio</span>`;
-            else if (p.mesa !== "" && p.mesa !== undefined) badge = `<span class="badge-metodo badge-mesa">Mesa ${p.mesa}</span>`;
 
-            const pString = JSON.stringify(p).replace(/"/g, "&quot;");
-            
-            const lateralDerecho = `
-                <div class="direccion-lateral">
-                    ${Number(p.costoDomicilio) > 0 ? `
-                        <div class="info-domicilio-valor">
-                            <span class="info-label">Envío:</span>
-                            <strong><i class="fas fa-motorcycle"></i> $${Number(p.costoDomicilio).toLocaleString()}</strong>
-                        </div>
-                    ` : ''}
-                    ${p.ubicacionGoogleMaps ? `
-                        <a href="${p.ubicacionGoogleMaps}" target="_blank" class="link-mapa">
-                            <i class="fas fa-map-marker-alt"></i>Ver Mapa</a>
-                    ` : ''}
-                </div>
-            `;
-
-            return `
-                <div class="pedido-card">
-                    <div class="pedido-header" onclick="this.parentElement.classList.toggle('abierto')">
-                        <div class="header-info">
-                            ${badge}
-                            <div class="header-top">
-                                <span class="pedido-id">${p.numeroFactura}</span>
-                            </div>
-                            <strong class="pedido-nombre">${p.nombre}</strong>
-                        </div>
-                        <div class="header-precio">
-                            <div class="pedido-hora">${p.hora} <i class="fas fa-chevron-down arrow-icon"></i></div>
-                            <span class="pedido-total">$${Number(p.totalPagar).toLocaleString()}</span>
-                        </div>
-                    </div>
-                    <div class="pedido-detalle">
-                        <div class="detalle-container">
-                            <div class="info-grid">
-                                <div class="info-item">
-                                    <span class="info-label">Cel:</span>
-                                    <strong><i class="fas fa-phone"></i> ${p.telefono || '0'}</strong>
-                                </div>
-                                <div class="info-item">
-                                    <span class="info-label">Pago:</span>
-                                    <strong><i class="fas fa-wallet"></i> ${p.metodoPago || 'No definido'}</strong>
-                                </div>
-                            </div>
-                            ${p.direccion ? `
-                            <div class="info-direccion">
-                                <div class="direccion-header">
-                                    <div class="direccion-texto">
-                                        <span class="info-label">Dirección de entrega:</span>
-                                        <strong>${p.direccion}</strong>
-                                        ${p.puntoReferencia ? `<small>REFERENCIA: ${p.puntoReferencia}</small>` : ''}
-                                    </div>
-                                    ${lateralDerecho}
-                                </div>
-                            </div>` : ''}
-                            <div class="info-productos">
-                                <strong class="productos-title">Productos</strong>
-                                <pre class="productos-lista">${p.productos}</pre>
-                            </div>
-                            ${p.observaciones ? `
-                            <div class="info-notas">
-                                <strong>Notas:</strong> ${p.observaciones}
-                            </div>` : ''}
-                            <div class="acciones-footer">
-                                <button class="btn-edit" onclick="editExistingOrder(${pString})">
-                                    <i class="fas fa-edit"></i> EDITAR
-                                </button>
-                                <button class="btn-print" onclick='imprimirFacturaPOS(${pString})'>
-                                    <i class="fas fa-print"></i> VER FACTURA
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>`;
-        };
-
-        // // Construcción del contenido final con divisores
-        let htmlAcumulado = "";
-
-        if (pedidosHoy.length > 0) {
-            htmlAcumulado += `<div class="divisor-fecha">HOY (${fechaHoy})</div>`; // // Divisor Hoy
-            htmlAcumulado += pedidosHoy.map(p => crearTarjetaHTML(p)).join("");
-        }
-
-        if (pedidosAyer.length > 0) {
-            htmlAcumulado += `<div class="divisor-fecha">AYER (${fechaAyer})</div>`; // // Divisor Ayer
-            htmlAcumulado += pedidosAyer.map(p => crearTarjetaHTML(p)).join("");
-        }
-
-        list.innerHTML = htmlAcumulado;
+        // Almacenar todos los pedidos para el filtrado
+        pedidosCargados = filtrados;
+        
+        // Renderizar los pedidos
+        renderizarPedidos(filtrados);
 
     } catch (err) {
         hideSpinner();
@@ -676,7 +899,7 @@ function forceResetToNew() {
   costoDomicilioOriginal = 0;
 
   // 2. Limpieza de todos los inputs (Nombre, Tel, etc.)
-  const campos = ["val-nombre", "val-tel", "val-mesa", "val-direccion", "val-referencia", "val-google-maps", "val-observaciones"];
+  const campos = ["val-nombre", "val-tel", "val-mesa", "val-direccion", "val-referencia", "val-google-maps", "val-observaciones", "val-monto-efectivo"];
   campos.forEach((id) => {
     const input = document.getElementById(id);
     if (input) input.value = "";
@@ -684,6 +907,12 @@ function forceResetToNew() {
 
   const payment = document.getElementById("val-metodo-pago");
   if (payment) payment.selectedIndex = 0;
+
+  // Ocultar contenedor de monto y cambio
+  const containerMonto = document.getElementById("container-monto-efectivo");
+  if (containerMonto) containerMonto.style.display = "none";
+  const cambioInfo = document.getElementById("cambio-info");
+  if (cambioInfo) cambioInfo.style.display = "none";
 
   // 3. Limpiar Banner de edición y BOTÓN CERRAR MESA (Cambio Clave)
   const banner = document.getElementById("edit-mode-banner");
@@ -793,9 +1022,25 @@ function setMethod(btn, method) {
     };
     
 
-    let html = crearInputConAccion("val-nombre", "Nombre cliente", "text", "updateTitle()");
-    html += crearInputConAccion("val-tel", "Teléfono", "tel", "updateTitle()");
-    html += crearInputConAccion("val-mesa", "Número mesa", "number", "updateTitle()");
+    let html = crearInputConAccion("val-nombre", "Nombre cliente", "text", "validarSoloLetras(this); updateTitle()");
+    
+    html += crearInputConAccion("val-tel", "Teléfono", "tel", "validarTelefono(this); updateTitle()");
+    
+    html += crearInputConAccion("val-mesa", "Número mesa", "number", "validarSoloNumeros(this); updateTitle()");
+    
+    // Agregar botones de números rápidos para mesa
+    if (method === "Mesa") {
+        html += `
+            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px;">
+                ${Array.from({length: 10}, (_, i) => `
+                    <button type="button" onclick="setMesaNumber(${i})" 
+                        style="padding: 8px 6px; background: var(--accent); color: black; border: none; border-radius: 25px; font-weight: bold; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">
+                        ${i}
+                    </button>
+                `).join('')}
+            </div>
+        `;
+    }
 
     if (method === "Domicilio") {
       html += crearInputConAccion("val-google-maps", "Pega Link de Maps o Coordenadas", "text", "analizarEntradaMapa(this.value)");
@@ -1177,6 +1422,9 @@ function actualizarFooter(subtotal, esDomicilio, valorEnvio, totalFinal) {
     if (totalDisplay) {
         totalDisplay.innerText = `$ ${totalFinal.toLocaleString('es-CO')}`;
     }
+    
+    // Recalcular el vuelto si el monto está ingresado
+    calcularCambio();
 }
 
 // FUNCIONES DE APOYO (Asegúrate de tenerlas)
@@ -1412,6 +1660,9 @@ if (mesaData.direccion) {
             "' no coincide con ninguna opción del HTML."
         );
       }
+      
+      // Mostrar el campo de monto si es efectivo
+      mostrarCampoMonto();
     }
 
     // 2. Llenado de campos específicos si es Domicilio
@@ -1461,6 +1712,12 @@ if (mesaData.direccion) {
 
     // Forzamos la actualización del botón (esto lo deshabilitará al inicio)
     updateButtonState();
+
+    // Limpiar el monto recibido y el cambio cuando se edita un pedido
+    const inputMonto = document.getElementById("val-monto-efectivo");
+    if (inputMonto) inputMonto.value = "";
+    const cambioInfo = document.getElementById("cambio-info");
+    if (cambioInfo) cambioInfo.style.display = "none";
 
     if (document.getElementById("btn-cancel-edit"))
       document.getElementById("btn-cancel-edit").style.display = "block";
@@ -1806,38 +2063,29 @@ async function actualizarPuntoYCostos(lat, lng) {
         }
     }).addTo(miniMap);
 
-    routingControl.on('routesfound', function(e) {
+        routingControl.on('routesfound', function(e) {
         const route = e.routes[0];
         const distanciaKm = route.summary.totalDistance / 1000;
         
         const valorKM = config?.costoPorKilometro || 1000;
-        const baseEnvio = config?.costoEnvioBase || 2000; 
-        const TARIFA_MINIMA = 4000;
+        const baseEnvio = config?.costoEnvioBase || 2000;
+        const tarifaMinima = config?.domicilio?.tarifaMinima || 3000; // Leer desde config
+        const recargoNocturnoActivo = config?.domicilio?.recargoNocturnoActivo !== false; // true por defecto
         const redondearACien = (valor) => Math.ceil(valor / 100) * 100;
 
         // 1. Precio Base y Mínima
         let calculoInicial = (distanciaKm * valorKM) + baseEnvio;
-        let costoBaseProcesado = Math.max(calculoInicial, TARIFA_MINIMA);
+        let costoBaseProcesado = Math.max(calculoInicial, tarifaMinima);
 
-        // 2. Recargo Nocturno (Simulando 10 PM)
-        // const hora = new Date().getHours();
-        // let costoConRecargo = costoBaseProcesado;
-        // let etiquetaNocturna = "";
-
-        // if (hora >= 22 || hora < 6) {
-        //     costoConRecargo = costoBaseProcesado * 1.20; 
-        //     etiquetaNocturna = `<br><span style="color:#e74c3c; font-weight:bold;">🌙 Recargo Nocturno (+20%)</span>`;
-        // }
-        
-        // RECARGO NOCTURNO DESACTIVADO
+        // 2. Recargo Nocturno (Solo si está activo en config)
         const hora = new Date().getHours();
         let costoConRecargo = costoBaseProcesado;
         let etiquetaNocturna = "";
-        
-        // if (hora >= 22 || hora < 6) {
-        //     costoConRecargo = costoBaseProcesado * 1.20; 
-        //     etiquetaNocturna = `<br><span style="color:#e74c3c; font-weight:bold;">🌙 Recargo Nocturno (+20%)</span>`;
-        // }
+
+        if (recargoNocturnoActivo && (hora >= 22 || hora < 6)) {
+            costoConRecargo = costoBaseProcesado * 1.20; 
+            etiquetaNocturna = `<br><span style="color:#e74c3c; font-weight:bold;">🌙 Recargo Nocturno (+20%)</span>`;
+        }
 
         // 3. Redondeo Final (Paso Crucial)
         // ✅ Siempre recalcular cuando se llama a actualizarPuntoYCostos()
@@ -1848,20 +2096,30 @@ async function actualizarPuntoYCostos(lat, lng) {
         const infoDiv = document.getElementById("distancia-info");
         if (infoDiv) {
             infoDiv.innerHTML = `
-                <div style="display:flex; flex-direction:column; padding: 12px; border-radius: 8px; border-left: 5px solid var(--accent); box-shadow: 0 2px 6px rgba(0,0,0,0.1); font-size: 14px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span><b>Distancia:</b> ${distanciaKm.toFixed(2)} km</span>
-                        <span style="font-size: 17px; color: #27ae60;"><b>$${costoDomicilioActual.toLocaleString('es-CO')}</b></span>
-                    </div>
-                    <div style="text-align:right; margin-top: 4px; color: #555;">
-                        <small>Base: $${costoBaseProcesado.toLocaleString('es-CO')}</small>
-                        ${etiquetaNocturna}
-                    </div>
+              <div style="display:flex; flex-direction:column; padding: 12px; border-radius: 8px; border-left: 5px solid var(--accent); box-shadow: 0 2px 6px rgba(0,0,0,0.1); font-size: 14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span><b>Distancia:</b> ${distanciaKm.toFixed(2)} km</span>
+                  <div style="display:flex; align-items:center; gap: 8px;">
+                    <span style="font-size: 12px; color: #999;">$</span>
+                    <input 
+                      type="text" 
+                      id="tarifa-domicilio-input" 
+                      value="${costoDomicilioActual.toLocaleString('es-CO')}" 
+                      style="width: 110px; padding: 6px 8px; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; color: #fff; background: #222; text-align: right;"
+                      oninput="formatearTarifaCOP(this)"
+                    >
+                  </div>
                 </div>
+                <div style="text-align:right; margin-top: 4px; color: #555;">
+                  <small>Base: $${costoBaseProcesado.toLocaleString('es-CO')}</small>
+                  ${etiquetaNocturna}
+                </div>
+              </div>
             `;
         }
     });
 }
+
 
 // Cambia el icono entre símbolo de pegar y símbolo de borrar
 function checkInputStatus(id) {
@@ -1878,6 +2136,29 @@ function checkInputStatus(id) {
     }
     updateButtonState();
     updateStepIndicator();
+}
+// 📌 FUNCIÓN: Formatear tarifa en COP y actualizar total en tiempo real
+function formatearTarifaCOP(input) {
+  // Obtener solo los dígitos
+  let valor = input.value.replace(/\D/g, '');
+    
+  // Si está vacío, dejar así
+  if (valor === '') {
+    input.value = '';
+    costoDomicilioActual = 0;
+    updateUI();
+    return;
+  }
+    
+  // Convertir a número
+  let numValor = parseInt(valor);
+    
+  // Formatear en COP
+  input.value = numValor.toLocaleString('es-CO');
+    
+  // Actualizar la tarifa y el total instantáneamente
+  costoDomicilioActual = numValor;
+  updateUI();
 }
 
 // ⎘ = PEGAR DIRECTO DEL PORTAPAPELES (ejecución inmediata al click)
@@ -2061,3 +2342,28 @@ function ejecutarImpresionSilenciosa(pedido) {
         }, 700); // Un poco más de tiempo para asegurar renderizado
     };
 }
+
+function resetInactivityTimer() {
+    // Si el sistema ya está en pantalla negra, no hacemos nada aquí 
+    // (esperamos el clic para recargar)
+    if (sistemaSuspendido) return;
+
+    clearTimeout(timeoutInactividad);
+    
+    timeoutInactividad = setTimeout(() => {
+        mostrarPantallaSuspension();
+    }, 5 * 60 * 1000); // 5 Minutos
+}
+
+function mostrarPantallaSuspension() {
+    sistemaSuspendido = true;
+    const overlay = document.getElementById("overlay-suspension");
+    if (overlay) {
+        overlay.style.display = "flex";
+    }
+}
+
+// Escuchar interacciones
+['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(evt => {
+    document.addEventListener(evt, resetInactivityTimer, true);
+});
